@@ -17,6 +17,9 @@
 
 package org.apache.rocketmq.remoting.netty;
 
+/**
+ * JVM 启动时可以通过 -D 设置系统属性，可以调整默认值
+ */
 public class NettySystemConfig {
     public static final String COM_ROCKETMQ_REMOTING_NETTY_POOLED_BYTE_BUF_ALLOCATOR_ENABLE =
         "com.rocketmq.remoting.nettyPooledByteBufAllocatorEnable";
