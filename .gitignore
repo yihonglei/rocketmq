@@ -18,4 +18,5 @@ bazel-bin
 bazel-rocketmq
 bazel-testlogs
 .vscode
+MODULE.bazel.lock
 rocketmqHome/store
