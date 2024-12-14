@@ -273,7 +273,7 @@ public abstract class NettyRemotingAbstract {
         Runnable run = buildProcessRequestHandler(ctx, cmd, pair, opaque);
 
         if (isShuttingDown.get()) {
-            if (cmd.getVersion() > MQVersion.Version.V5_1_4.ordinal()) {
+            if (cmd.getVersion() > MQVersion.Version.V5_3_1.ordinal()) {
                 final RemotingCommand response = RemotingCommand.createResponseCommand(ResponseCode.GO_AWAY,
                     "please go away");
                 response.setOpaque(opaque);
@@ -320,9 +320,10 @@ public abstract class NettyRemotingAbstract {
         return () -> {
             Exception exception = null;
             RemotingCommand response;
+            String remoteAddr = null;
 
             try {
-                String remoteAddr = RemotingHelper.parseChannelRemoteAddr(ctx.channel());
+                remoteAddr = RemotingHelper.parseChannelRemoteAddr(ctx.channel());
                 try {
                     doBeforeRpcHooks(remoteAddr, cmd);
                 } catch (AbortProcessException e) {
@@ -359,7 +360,7 @@ public abstract class NettyRemotingAbstract {
                 response.setOpaque(opaque);
                 writeResponse(ctx.channel(), cmd, response);
             } catch (Throwable e) {
-                log.error("process request exception", e);
+                log.error("process request exception, remoteAddr: {}", remoteAddr, e);
                 log.error(cmd.toString());
 
                 if (!cmd.isOnewayRPC()) {
