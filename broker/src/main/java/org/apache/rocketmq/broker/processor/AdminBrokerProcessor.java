@@ -406,6 +406,8 @@ public class AdminBrokerProcessor implements NettyRequestProcessor {
                 return this.getAcl(ctx, request);
             case RequestCode.AUTH_LIST_ACL:
                 return this.listAcl(ctx, request);
+            case RequestCode.POP_ROLLBACK:
+                return this.transferPopToFsStore(ctx, request);
             default:
                 return getUnknownCmdResponse(ctx, request);
         }
@@ -422,7 +424,7 @@ public class AdminBrokerProcessor implements NettyRequestProcessor {
         GetSubscriptionGroupConfigRequestHeader requestHeader = (GetSubscriptionGroupConfigRequestHeader) request.decodeCommandCustomHeader(GetSubscriptionGroupConfigRequestHeader.class);
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
 
-        SubscriptionGroupConfig groupConfig = this.brokerController.getSubscriptionGroupManager().getSubscriptionGroupTable().get(requestHeader.getGroup());
+        SubscriptionGroupConfig groupConfig = this.brokerController.getSubscriptionGroupManager().findSubscriptionGroupConfig(requestHeader.getGroup());
         if (groupConfig == null) {
             LOGGER.error("No group in this broker, client: {} group: {}", ctx.channel().remoteAddress(), requestHeader.getGroup());
             response.setCode(ResponseCode.SUBSCRIPTION_GROUP_NOT_EXIST);
@@ -2185,7 +2187,14 @@ public class AdminBrokerProcessor implements NettyRequestProcessor {
         ResetOffsetBody body = new ResetOffsetBody();
         String brokerName = brokerController.getBrokerConfig().getBrokerName();
         for (Map.Entry<Integer, Long> entry : queueOffsetMap.entrySet()) {
-            brokerController.getPopInflightMessageCounter().clearInFlightMessageNum(topic, group, entry.getKey());
+            if (brokerController.getPopInflightMessageCounter() != null) {
+                brokerController.getPopInflightMessageCounter().clearInFlightMessageNum(topic, group, entry.getKey());
+            }
+            if (brokerController.getBrokerConfig().isPopConsumerKVServiceEnable()) {
+                brokerController.getPopConsumerService().clearCache(group, topic, entry.getKey());
+                brokerController.getConsumerOffsetManager().commitPullOffset(
+                    "ResetOffsetInner", group, topic, entry.getKey(), entry.getValue());
+            }
             body.getOffsetTable().put(new MessageQueue(topic, brokerName, entry.getKey()), entry.getValue());
         }
 
@@ -2435,7 +2444,7 @@ public class AdminBrokerProcessor implements NettyRequestProcessor {
         }
         // groupSysFlag
         if (StringUtils.isNotEmpty(requestHeader.getConsumerGroup())) {
-            SubscriptionGroupConfig groupConfig = brokerController.getSubscriptionGroupManager().getSubscriptionGroupTable().get(requestHeader.getConsumerGroup());
+            SubscriptionGroupConfig groupConfig = brokerController.getSubscriptionGroupManager().findSubscriptionGroupConfig(requestHeader.getConsumerGroup());
             if (groupConfig != null) {
                 request.addExtField("groupSysFlag", String.valueOf(groupConfig.getGroupSysFlag()));
             }
@@ -2924,7 +2933,7 @@ public class AdminBrokerProcessor implements NettyRequestProcessor {
         GetTopicConfigRequestHeader requestHeader = (GetTopicConfigRequestHeader) request.decodeCommandCustomHeader(GetTopicConfigRequestHeader.class);
         final RemotingCommand response = RemotingCommand.createResponseCommand(null);
 
-        TopicConfig topicConfig = this.brokerController.getTopicConfigManager().getTopicConfigTable().get(requestHeader.getTopic());
+        TopicConfig topicConfig = this.brokerController.getTopicConfigManager().selectTopicConfig(requestHeader.getTopic());
         if (topicConfig == null) {
             LOGGER.error("No topic in this broker, client: {} topic: {}", ctx.channel().remoteAddress(), requestHeader.getTopic());
             //be care of the response code, should set "not-exist" explicitly
@@ -3520,5 +3529,20 @@ public class AdminBrokerProcessor implements NettyRequestProcessor {
             return false;
         }
         return cqUnit1.getTagsCode() == cqUnit2.getTagsCode();
+    }
+
+    private RemotingCommand transferPopToFsStore(ChannelHandlerContext ctx, RemotingCommand request) {
+        final RemotingCommand response = RemotingCommand.createResponseCommand(null);
+        try {
+            if (brokerController.getPopConsumerService() != null) {
+                brokerController.getPopConsumerService().transferToFsStore();
+            }
+            response.setCode(ResponseCode.SUCCESS);
+        } catch (Exception e) {
+            LOGGER.error("PopConsumerStore transfer from kvStore to fsStore finish [{}]", request, e);
+            response.setCode(ResponseCode.SYSTEM_ERROR);
+            response.setRemark(e.getMessage());
+        }
+        return response;
     }
 }

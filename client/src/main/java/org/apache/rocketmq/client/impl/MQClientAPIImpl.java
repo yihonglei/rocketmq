@@ -776,7 +776,7 @@ public class MQClientAPIImpl implements NameServerUpdateCallback, StartAndShutdo
         final DefaultMQProducerImpl producer
     ) {
         int tmp = curTimes.incrementAndGet();
-        if (needRetry && tmp <= timesTotal) {
+        if (needRetry && tmp <= timesTotal && timeoutMillis > 0) {
             String retryBrokerName = brokerName;//by default, it will send to the same broker
             if (topicPublishInfo != null) { //select one message queue accordingly, in order to determine which broker to send
                 MessageQueue mqChosen = producer.selectOneMessageQueue(topicPublishInfo, brokerName, false);
@@ -3572,5 +3572,17 @@ public class MQClientAPIImpl implements NameServerUpdateCallback, StartAndShutdo
                 invokeCallback.operationFail(throwable);
             }
         });
+    }
+
+    public void exportPopRecord(String brokerAddr, long timeout) throws RemotingConnectException,
+        RemotingSendRequestException, RemotingTimeoutException, InterruptedException, MQBrokerException {
+        RemotingCommand request = RemotingCommand.createRequestCommand(
+            RequestCode.POP_ROLLBACK, null);
+        RemotingCommand response = this.remotingClient.invokeSync(brokerAddr, request, timeout);
+        assert response != null;
+        if (response.getCode() == SUCCESS) {
+            return;
+        }
+        throw new MQBrokerException(response.getCode(), response.getRemark());
     }
 }
